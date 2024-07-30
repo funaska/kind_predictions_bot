@@ -84,7 +84,7 @@ class KindPredictionsBot:
         :return: None
         """
         self.logger.debug('Running start command')
-        await update.message.reply_text("commands: //help //about")
+        await update.message.reply_text("commands: /help /about")
 
     # noinspection PyUnusedLocal
     async def help_command(

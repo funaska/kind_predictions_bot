@@ -245,7 +245,7 @@ class DBTools:
         with closing(self.conn.cursor()) as cursor:
             cursor.execute(self.CREATE_USERS_TABLE_QUERY)
             cursor.execute(self.CREATE_PREDICTIONS_TABLE_QUERY)
-            with open('default_predictions.sql', 'r') as predictions_file:
+            with open('default_predictions.sql', 'r', encoding='utf8') as predictions_file:
                 cursor.executescript(predictions_file.read())
 
     def check_if_table_exists(self, table_name: str) -> bool:
