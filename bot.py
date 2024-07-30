@@ -129,7 +129,7 @@ class KindPredictionsBot:
         self.logger.debug('Running about command')
         about_message = (
                 'Check out source and suggest an issue: '
-                + f'[GITHUB]({constants.GITHUB_URL})' + '\\n'
+                + f'[GITHUB]({constants.GITHUB_URL})' + '\n'
                 + 'Ask about this bot: '
                 + '@' + constants.MAIN_ADMIN_TG_USERNAME
         )
