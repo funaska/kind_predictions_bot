@@ -67,7 +67,7 @@ class KindPredictionsBot:
                 Handles inline requests by returning a random percentage
                     to fun question "Насколько ты булка?".
         """
-    notifying_time = time(hour=10),
+    notifying_time = time(hour=10)
     notifying_days = (0, 1, 2, 3, 4, 5, 6)
 
     def __init__(
