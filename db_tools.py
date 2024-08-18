@@ -178,12 +178,12 @@ class DBTools:
             FOREIGN KEY(user_id) REFERENCES USERS_TABLE_NAME(user_id)
         )
     '''
-    GET_APPROVED_PREDICTION_QUERY: str = f'''
-        SELECT * FROM {PREDICTIONS_TABLE_NAME}
-        WHERE approval_state = ?
-        ORDER BY random()
-        LIMIT 1
-    '''
+    GET_APPROVED_PREDICTION_QUERY: str = (
+        f'SELECT * FROM {PREDICTIONS_TABLE_NAME} '
+        'WHERE approval_state = ? '
+        'ORDER BY random() '
+        'LIMIT 1'
+    )
     GET_PREDICTION_BY_ID_QUERY: str = (
         f'SELECT * FROM {PREDICTIONS_TABLE_NAME} WHERE prediction_id = ?'
     )
@@ -200,6 +200,16 @@ class DBTools:
     CHECK_IF_TABLE_EXISTS_QUERY = (
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name= ?"
+    )
+    ADD_PREDICTION_QUERY = (
+        f"INSERT INTO {PREDICTIONS_TABLE_NAME} "
+        "(prediction_text, user_id) "
+        "VALUES (?, ?)"
+    )
+    GET_UNAPPROVED_PREDICTIONS_QUERY = (
+        f"SELECT prediction_id, prediction_text "
+        f"FROM {PREDICTIONS_TABLE_NAME} "
+        f"WHERE approval_state = '{ApprovalStates.NOT_APPROVED.value}'"
     )
 
     def __init__(
@@ -374,8 +384,73 @@ class DBTools:
         return self.fetch_all(
             self.GET_USER_STATISTIC_QUERY, (user_id, ))
 
+    def user_exists(self, user_id: int) -> bool:
+        """
+        Checks if a user with the given ID exists in the database.
+
+        Args:
+            user_id (int): The ID of the user.
+
+        Returns:
+            bool: True if the user exists, False otherwise.
+        """
+        CHECK_USER_EXISTS_QUERY: str = (
+            f"SELECT user_id FROM {self.USERS_TABLE_NAME} WHERE  user_id = ?"
+        )
+        user = self.fetch_one(CHECK_USER_EXISTS_QUERY, (user_id,))
+
+        return user is not None
+
+    def add_user(self, user_id: int, user_name: str) -> None:
+        """
+        Adds a user to the users table.
+
+        Args:
+            user_id (int): The ID of the user.
+            user_name (str): Telegram username of the user.
+        """
+        ADD_USER_QUERY = f"""
+            INSERT INTO {self.USERS_TABLE_NAME}
+            (user_id, user_name, state)
+            VALUES (?, ?, "{UserStates.ACTIVE.value}")
+        """
+        cursor = self.execute_query(
+            ADD_USER_QUERY, (user_id, user_name)
+        )
+        self.conn.commit()
+        cursor.close()
+
+    def add_prediction(self, prediction_text: str, user_id: int) -> None:
+        """
+        Adds a prediction to the database.
+
+        :param prediction_text: Prediction text to add to the database.
+        :type prediction_text: str
+        :param user_id: The ID of the user who owns the prediction.
+        :type user_id: int
+        :return: None
+        """
+
+        cursor = self.execute_query(
+            self.ADD_PREDICTION_QUERY, (prediction_text, user_id)
+        )
+        self.conn.commit()
+        cursor.close()
+
+    def get_unapproved_predictions(self) -> List[Tuple]:
+        """
+        Returns all unapproved predictions.
+
+        :return: A list of tuples containing the unapproved predictions.
+        """
+        return self.fetch_all(self.GET_UNAPPROVED_PREDICTIONS_QUERY)
+
 
 if __name__ == '__main__':
     db_tools = DBTools(constants.DB_NAME)
 
     print(db_tools.get_random_approved_prediction())
+    unapproved_predictions = db_tools.get_unapproved_predictions()
+
+    for prediction in unapproved_predictions:
+        print(prediction)
