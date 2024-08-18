@@ -20,7 +20,8 @@ def setup_logger(
 
     # file output
     if log_file is not None:
+        # TODO: spilt to path and file_name parameters
         Path(log_file.rsplit('/', 1)[0]).mkdir(parents=True, exist_ok=True)
-        fileHandler = logging.FileHandler(log_file)
+        fileHandler = logging.FileHandler(log_file, encoding='utf-8')
         fileHandler.setFormatter(formatter)
         logger.addHandler(fileHandler)
