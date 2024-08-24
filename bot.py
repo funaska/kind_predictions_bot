@@ -30,7 +30,7 @@ from telegram.ext import (
 
 import constants
 import secrets
-from db_tools import ApprovalStates, DBTools
+from db_tools import ApprovalStates, DBTools, DBToolsAsync
 from utils import setup_logger
 
 
@@ -73,7 +73,7 @@ class KindPredictionsBot:
     def __init__(
         self, logging_level: int = logging.INFO, test_run: bool = False
     ):
-        self.db_tools = DBTools(constants.DB_NAME)
+        self.db_tools = DBToolsAsync(constants.DB_NAME)
         self.logging_level = logging_level
         self.test_run = test_run
         self.log_file = (
@@ -191,29 +191,31 @@ class KindPredictionsBot:
         self.logger.debug(
             'Got suggestion from: %s', update.message.from_user
         )
-        if not self.db_tools.user_exists(update.message.from_user.id):
+        if not await self.db_tools.user_exists_async(
+                update.message.from_user.id
+        ):
             self.logger.debug(
                 'New user, adding (%s)',
                 update.message.from_user
             )
-            self.db_tools.add_user(
-                update.message.from_user.id, update.message.from_user.username
+            await self.db_tools.add_user_async(
+                update.message.from_user.id,
+                update.message.from_user.username
             )
 
         self.logger.debug('Saving prediction to database')
         if update.message.text == '/suggest':
+            self.logger.debug('Someone suggested nothing')
             await update.message.reply_text(
-                'Try to write something after "/suggest"', parse_mode=ParseMode.MARKDOWN
+                'Try to write something after "/suggest"'
             )
         else:
-            self.db_tools.add_prediction(
+            await self.db_tools.add_prediction_async(
                 update.message.text.removeprefix('/suggest '),
                 update.message.from_user.id
             )
 
-            await update.message.reply_text(
-                'suggestion sent to approve', parse_mode=ParseMode.MARKDOWN
-            )
+            await update.message.reply_text('Suggestion sent to approve')
 
     # noinspection PyUnusedLocal
     async def inline_query(
@@ -243,7 +245,7 @@ class KindPredictionsBot:
                 id=str(uuid4()),
                 title="Предсказание",
                 input_message_content=InputTextMessageContent(
-                    self.db_tools.get_random_approved_prediction()
+                    await self.db_tools.get_random_approved_prediction_async()
                 ),
             )
         ]
@@ -264,9 +266,11 @@ class KindPredictionsBot:
         mark them as inappropriate.
         """
 
-        self.logger.debug('Checking for unapproved prediction')
+        self.logger.debug('Starting to notify admin of unapproved predictions')
 
-        unapproved_predictions = self.db_tools.get_unapproved_predictions()
+        unapproved_predictions = (
+            await self.db_tools.get_unapproved_predictions_async()
+        )
 
         if unapproved_predictions:
             self.logger.debug('There are unapproved prediction')
@@ -310,7 +314,7 @@ class KindPredictionsBot:
                 )
 
                 self.logger.debug(
-                    'Sending message with unapproved predictions'
+                    'Sending message with unapproved prediction'
                 )
 
                 await context.bot.send_message(
@@ -318,20 +322,21 @@ class KindPredictionsBot:
                     text=f"Prediction: {prediction[1]}",
                     reply_markup=reply_markup
                 )
-        elif self.test_run:
+        else:
             self.logger.debug('There is no unapproved prediction')
             await context.bot.send_message(
                 chat_id=secrets.MAIN_ADMIN_TG_USER_ID,
                 text='You have no unapproved predictions',
             )
 
-    def remove_job_if_exists(
+    async def remove_job_if_exists(
         self, name: str, context: ContextTypes.DEFAULT_TYPE
     ) -> bool:
         """Remove job with given name. Returns whether job was removed."""
         current_jobs = context.job_queue.get_jobs_by_name(name)
         self.logger.debug(
-            'Current jobs: %s', [job.name for job in context.job_queue.jobs()]
+            'Current jobs: %s',
+            [job.name for job in context.job_queue.jobs()]
         )
         if not current_jobs:
             return False
@@ -364,6 +369,7 @@ class KindPredictionsBot:
         :type run_once: bool
         :return: None
         """
+        self.logger.debug('Checking for unapproved predictions')
         # terminate if the user is not the admin
         if update.message.from_user.id != secrets.MAIN_ADMIN_TG_USER_ID:
             await context.bot.send_message(
@@ -380,7 +386,8 @@ class KindPredictionsBot:
             )
             return
 
-        if run_once:
+        if run_once is True:
+            self.logger.debug('Checking once')
             context.job_queue.run_once(
                 self.notify_admin_unapproved_predictions,
                 when=datetime.now().minute + 1,
@@ -389,7 +396,7 @@ class KindPredictionsBot:
             )
             await update.message.reply_text('Wait for it...')
         else:
-            job_removed = self.remove_job_if_exists(
+            job_removed = await self.remove_job_if_exists(
                 str(secrets.MAIN_ADMIN_TG_USER_ID), context
             )
             text = "Starting job"
@@ -430,13 +437,15 @@ class KindPredictionsBot:
             information about the incoming message.
         :type context: ContextTypes.DEFAULT_TYPE
         """
-        text = 'Stopping checking for unapproved predictions'
+        text = 'Stop checking for unapproved predictions'
         await context.bot.send_message(
             chat_id=secrets.MAIN_ADMIN_TG_USER_ID,
             text=text
         )
         self.logger.debug(text)
-        job = context.job_queue.get_jobs_by_name(str(secrets.MAIN_ADMIN_TG_USER_ID))
+        job = await context.job_queue.get_jobs_by_name(
+            str(secrets.MAIN_ADMIN_TG_USER_ID)
+        )
         if job:
             job[0].schedule_removal()
         else:
@@ -540,15 +549,9 @@ class KindPredictionsBot:
         )
 
         # update a prediction with the data from callback
-        self.db_tools.update_prediction_status(
+        await self.db_tools.update_prediction_status_async(
             callback_data_dict['prediction_id'], callback_data_dict['state']
         )
-
-        # CallbackQueries need to be answered, even if
-        # no notification to the user is needed
-        # Some clients may have trouble otherwise.
-        # See https://core.telegram.org/bots/api#callbackquery
-        await query.answer()
 
         await query.edit_message_text(
             text=(
@@ -557,6 +560,12 @@ class KindPredictionsBot:
                 f'''was marked as {callback_data_dict['state']}'''
             )
         )
+
+        # CallbackQueries need to be answered, even if
+        # no notification to the user is needed
+        # Some clients may have trouble otherwise.
+        # See https://core.telegram.org/bots/api#callbackquery
+        await query.answer()
 
 
 def main() -> None:
@@ -574,61 +583,58 @@ def main() -> None:
         logging_level=logging.DEBUG,
         test_run=True if is_test_run is True else False
     )
-    try:
-        # Create the Application and pass it your bot's token.
-        application = Application.builder().token(
-            secrets.API_TOKEN if not is_test_run else secrets.API_TOKEN_TEST
-        ).build()
 
-        # on different commands - answer in Telegram
-        application.add_handler(
-            CommandHandler(
-                "start", bot.start_command
-            )
-        )
-        application.add_handler(
-            CommandHandler(
-                "help", bot.help_command
-            )
-        )
-        application.add_handler(
-            CommandHandler(
-                "about", bot.about_command
-            )
-        )
-        application.add_handler(
-            CommandHandler(
-                "suggest", bot.suggest_command
-            )
-        )
+    # Create the Application and pass it your bot's token.
+    application = Application.builder().token(
+        secrets.API_TOKEN if not is_test_run else secrets.API_TOKEN_TEST
+    ).build()
 
-        # Handler for callbacks from pressed buttons
-        application.add_handler(CallbackQueryHandler(bot.button_handler))
-        # on inline queries - show corresponding inline results
-        application.add_handler(InlineQueryHandler(bot.inline_query))
-
-        # start job for notifying about unapproved messages
-        application.add_handler(
-            CommandHandler(
-                "notify_start", bot.start_unapproved_messages_notify
-            )
+    # on different commands - answer in Telegram
+    application.add_handler(
+        CommandHandler(
+            "start", bot.start_command
         )
-        application.add_handler(
-            CommandHandler(
-                "notify_stop", bot.stop_unapproved_messages_notify
-            )
+    )
+    application.add_handler(
+        CommandHandler(
+            "help", bot.help_command
         )
-        application.add_handler(
-            CommandHandler(
-                "check_once", bot.check_unapproved_messages_once
-            )
+    )
+    application.add_handler(
+        CommandHandler(
+            "about", bot.about_command
         )
+    )
+    application.add_handler(
+        CommandHandler(
+            "suggest", bot.suggest_command
+        )
+    )
 
-        # Run the bot until the user presses Ctrl-C
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Handler for callbacks from pressed buttons
+    application.add_handler(CallbackQueryHandler(bot.button_handler))
+    # on inline queries - show corresponding inline results
+    application.add_handler(InlineQueryHandler(bot.inline_query))
 
-    except Exception as e:
-        bot.logger.error(f"An error occurred: {e}")
+    # start job for notifying about unapproved messages
+    application.add_handler(
+        CommandHandler(
+            "notify_start", bot.start_unapproved_messages_notify
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "notify_stop", bot.stop_unapproved_messages_notify
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "check_once", bot.check_unapproved_messages_once
+        )
+    )
+
+    # Run the bot until the user presses Ctrl-C
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
