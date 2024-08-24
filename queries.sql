@@ -12,6 +12,7 @@ SELECT
 FROM predictions
 WHERE 1=1
 -- and approval_state = 'not approved'
+-- and approval_state = 'approved'
 -- and prediction_text = '/suggest'
 ORDER BY prediction_id desc
 LIMIT 10;
