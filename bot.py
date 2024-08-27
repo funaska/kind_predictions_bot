@@ -37,36 +37,42 @@ from utils import setup_logger
 class KindPredictionsBot:
     # noinspection NonAsciiCharacters
     """
-        This class defines the KindPredictionsBot, an asynchronous
-        Telegram Bot that responds to a series of predefined commands.
-        The bot is capable of handling commands like /start, /help
-        and /about as well as some inline queries.
+    This class represents the KindPredictionsBot and contains methods to
+    handle various Telegram commands and interactions such as /start, 
+    /help, /about, /suggest, and inline queries.
 
-        Attributes:
-            db_tools (DBTools): Instance of the DBTools class that
-                connects to and interacts with the bot's database.
-            logging_level (int): Level of log detail. Uses the standard
-                library logging levels.
-            logger (logging.Logger): Logger instance used by the bot for
-                debugging and error tracking.
+    Attributes:
+        notifying_time (datetime.time): The time at which notifications
+            are sent.
+        notifying_days (tuple): The days of the week when notifications
+            are sent.
+        db_tools (DBToolsAsync): The database tools instance for async
+            operations.
+        logging_level (int): The logging level.
+        test_run (bool): Flag to indicate if it's a test run.
+        log_file (str): The file where logs are stored.
+        logger (logging.Logger): The logger instance for this class.
 
-        Methods:
-            start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-                Handles the /start command informing the user
-                    about available commands.
-            help_command(
-                    update: Update, context: ContextTypes.DEFAULT_TYPE):
-                Handles the /help command by forwarding the question
-                    to the main bot administrator.
-            about_command(
-                    update: Update, context: ContextTypes.DEFAULT_TYPE):
-                Handles the /about command with the information about
-                    the bot including its source code link.
-            inline_query(
-                    update: Update, context: ContextTypes.DEFAULT_TYPE):
-                Handles inline requests by returning a random percentage
-                    to fun question "Насколько ты булка?".
-        """
+    Methods:
+        start_command(update, context):
+            Handles the /start command informing the user about
+            available commands.
+
+        help_command(update, context):
+            Handles the /help command and forwards the problem to the
+            main administrator.
+
+        about_command(update, context):
+            Handles the /about command with information about the bot
+            including the source code link.
+
+        suggest_command(update, context):
+            Handles the /suggest command to save user suggestions and
+            send them for approval.
+
+        inline_query(update, context):
+            Handles inline queries.
+    """
     notifying_time = time(hour=10)
     notifying_days = (0, 1, 2, 3, 4, 5, 6)
 
@@ -203,17 +209,18 @@ class KindPredictionsBot:
                 update.message.from_user.username
             )
 
-        self.logger.debug('Saving prediction to database')
         if update.message.text == '/suggest':
             self.logger.debug('Someone suggested nothing')
             await update.message.reply_text(
                 'Try to write something after "/suggest"'
             )
         else:
+            self.logger.debug('Saving prediction to database')
             await self.db_tools.add_prediction_async(
                 update.message.text.removeprefix('/suggest '),
                 update.message.from_user.id
             )
+            self.logger.debug('Successfully saved prediction to database')
 
             await update.message.reply_text('Suggestion sent to approve')
 
@@ -251,7 +258,10 @@ class KindPredictionsBot:
         ]
         await update.inline_query.answer(
             results,
-            cache_time=constants.INLINE_QUERY_ANSWER_CACHE_TIMEOUT,
+            cache_time=(
+                constants.INLINE_QUERY_ANSWER_CACHE_TIMEOUT
+                if not self.test_run else 0
+            ),
             is_personal=True
         )
 
@@ -607,7 +617,8 @@ def main() -> None:
     )
     application.add_handler(
         CommandHandler(
-            "suggest", bot.suggest_command
+            "suggest", bot.suggest_command,
+            block=False
         )
     )
 
@@ -619,17 +630,23 @@ def main() -> None:
     # start job for notifying about unapproved messages
     application.add_handler(
         CommandHandler(
-            "notify_start", bot.start_unapproved_messages_notify
+            "notify_start",
+            bot.start_unapproved_messages_notify,
+            block=False
         )
     )
     application.add_handler(
         CommandHandler(
-            "notify_stop", bot.stop_unapproved_messages_notify
+            "notify_stop",
+            bot.stop_unapproved_messages_notify,
+            block=False
         )
     )
     application.add_handler(
         CommandHandler(
-            "check_once", bot.check_unapproved_messages_once
+            "check_once",
+            bot.check_unapproved_messages_once,
+            block=False
         )
     )
 
